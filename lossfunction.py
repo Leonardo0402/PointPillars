@@ -1,9 +1,7 @@
 import torch
 from config import Parameters
-import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.autograd import Variable
 
 class point_pillars_loss(nn.Module):
     """
@@ -22,8 +20,9 @@ class point_pillars_loss(nn.Module):
         # loss function
         self.smoothL1 = nn.SmoothL1Loss()
         self.relu = nn.ReLU()
-        self.BCE = nn.BCELoss()
-        self.sigmoid = nn.Sigmoid()
+        # Binary cross entropy with logits for focal and direction loss
+        self.bce_logits = nn.BCEWithLogitsLoss(reduction='none')
+        self.bce_heading = nn.BCEWithLogitsLoss()
 
 
     
@@ -79,28 +78,27 @@ class point_pillars_loss(nn.Module):
         alpha = self.alpha
         gamma = self.gamma
 
-        ones = torch.ones_like(clf0)
-        pt = (ones - clf)*clf0 + clf*(ones-clf0)
+        prob = torch.sigmoid(clf)
+        pt = prob * clf0 + (1 - prob) * (1 - clf0)
 
-        focal_weight = (alpha*clf0 + (1-alpha)*(ones-clf0)) * pt.pow(gamma)
-        predict = self.sigmoid(clf[...,:])
-        loss = (focal_weight * self.BCE(predict, clf0[...,:])).sum()# 这里暂时把交叉熵换为绝对值
-        return loss
+        alpha_factor = alpha * clf0 + (1 - alpha) * (1 - clf0)
+        focal_weight = alpha_factor * (1 - pt).pow(gamma)
+        bce = self.bce_logits(clf, clf0)
+        return (focal_weight * bce).sum()
                 
 
     def direction_loss(self, heading, heading0):
         """
         Input shape: batch_size*252*252*4
         """
-        return self.BCE(heading[...,:], heading0[...,:])
+        return self.bce_heading(heading[...,:], heading0[...,:])
 
 
 
 if __name__=='__main__':
     mode = 'test all'
     if mode == 'test all':
-        params = Parameters()
-        ls = point_pillars_loss(params)
+        ls = point_pillars_loss()
         loc1 = torch.randn([4,252,252,4,3])
         loc0 = torch.randn([4,252,252,4,3])
 
@@ -113,21 +111,22 @@ if __name__=='__main__':
         clf0 = torch.randn([4,252, 252, 4, 4])
         clf1 = torch.randn([4, 252, 252, 4, 4])
         
-        result = ls(loc=loc1, size=size1, angle=angle1, clf=clf1,loc0=loc0, size0=size0, angle0=angle0,clf0=clf0)
+        heading1 = torch.randn([4,252,252,4])
+        heading0 = torch.randn([4,252,252,4])
+        result = ls(loc=loc1, size=size1, angle=angle1, clf=clf1, heading=heading1,
+                    loc0=loc0, size0=size0, angle0=angle0, clf0=clf0, heading0=heading0)
         print(result)
     elif mode == 'test focal loss':
-        params = Parameters()
-        ls = point_pillars_loss(params)
+        ls = point_pillars_loss()
         clf = torch.ones(4,252,252,4,4)
         clf0 = torch.ones(4,252,252,4,4)
         res = ls.focal_loss(clf, clf0)
         print(res)
     elif mode == 'test direction loss':
-        params = Parameters()
-        ls = point_pillars_loss(params)
-        clf = torch.ones(4,252,252,4)
-        clf0 = torch.ones(4,252,252,4)
-        res = ls.direction_loss(clf, clf0)
+        ls = point_pillars_loss()
+        heading = torch.ones(4,252,252,4)
+        heading0 = torch.ones(4,252,252,4)
+        res = ls.direction_loss(heading, heading0)
         print(res)
 
 
