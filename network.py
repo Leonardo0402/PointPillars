@@ -47,34 +47,26 @@ class pillar_feature_net(nn.Module):
 
         Output Shape: Batch_size * width * height * 64
         """
-        width = int((Parameters.x_max - Parameters.x_min)/Parameters.x_step)
-        height = int((Parameters.y_max - Parameters.y_min)/Parameters.y_step)
-        # print(width, height)
+        width = int((Parameters.x_max - Parameters.x_min) / Parameters.x_step)
+        height = int((Parameters.y_max - Parameters.y_min) / Parameters.y_step)
         batch_size = pillar_features.shape[0]
-        pseudo_img = torch.zeros(batch_size, width, height, 64)
-        
-        i = 0
-        # Loop to scatter feature into pseudo-img
-        while i < batch_size:
-            img = torch.zeros(width, height, 64)
+        device = pillar_features.device
+        pseudo_img = torch.zeros(
+            batch_size, width, height, 64, device=device, dtype=pillar_features.dtype
+        )
 
-            j = 0
-            while j < 12000:
-                if pillar_indices.is_cuda:
-                    pillar_coordinate = pillar_indices[i, j, :].cpu().numpy()
-                else:
-                    pillar_coordinate = pillar_indices[i, j, :].numpy()
-                if (pillar_coordinate==[0,0,0]).all():
-                    j += 1
-                    continue
-                if pillar_coordinate[1]>=width:
-                    raise Exception('Pillar Coordinate X Out of Bounds')
-                if pillar_coordinate[2]>=height:
-                    raise Exception('Pillar Coordinate Y Out of Bounds')
-                    
-                pseudo_img[i, pillar_coordinate[1], pillar_coordinate[2], :] = pillar_features[i, j, :]
-                j += 1
-            i += 1
+        # Scatter features for each batch without Python loops over pillars
+        for i in range(batch_size):
+            coords = pillar_indices[i]
+            mask = (coords != 0).any(dim=1)
+            coords = coords[mask].long()
+            feats = pillar_features[i, mask]
+
+            valid = (coords[:, 1] < width) & (coords[:, 2] < height)
+            coords = coords[valid]
+            feats = feats[valid]
+
+            pseudo_img[i, coords[:, 1], coords[:, 2]] = feats
 
         
         return pseudo_img
@@ -93,9 +85,10 @@ class backbone(nn.Module):
 
         # top-down
 
-        self.block1 = [] # (S, 4, C)
-        self.bn1 = []
-        self.relu1 = []
+        # Use ModuleList to ensure layers are registered properly
+        self.block1 = nn.ModuleList()  # (S, 4, C)
+        self.bn1 = nn.ModuleList()
+        self.relu1 = nn.ModuleList()
         for i in range(4):
             if i==0:
                 stride = (2,2)
@@ -106,9 +99,9 @@ class backbone(nn.Module):
             self.bn1.append(nn.BatchNorm2d(64))
             self.relu1.append(nn.ReLU())
 
-        self.block2 = [] # (2S, 6, 2C)
-        self.bn2 = []
-        self.relu2 = []
+        self.block2 = nn.ModuleList()  # (2S, 6, 2C)
+        self.bn2 = nn.ModuleList()
+        self.relu2 = nn.ModuleList()
         for i in range(6):
             if i==0:
                 stride = (2,2) 
@@ -119,9 +112,9 @@ class backbone(nn.Module):
             self.bn2.append(nn.BatchNorm2d(64*2))
             self.relu2.append(nn.ReLU())
         
-        self.block3 = [] # (4S, 6, 4C)
-        self.bn3 = []
-        self.relu3 = []
+        self.block3 = nn.ModuleList()  # (4S, 6, 4C)
+        self.bn3 = nn.ModuleList()
+        self.relu3 = nn.ModuleList()
         for i in range(6):
             if i==0:
                 stride = (2,2) 
@@ -203,7 +196,6 @@ class detection_head(nn.Module):
         nb_classes = int(Parameters.nb_classes)
 
         self.occ = nn.Conv2d(384, nb_anchors, (1,1))
-        self.sigmoid1 = nn.Sigmoid()
 
         self.loc = nn.Conv2d(384, 3*nb_anchors, (1,1))
 
@@ -212,7 +204,6 @@ class detection_head(nn.Module):
         self.sizeconv = nn.Conv2d(384, 3*nb_anchors,(1,1))
 
         self.heading = nn.Conv2d(384, nb_anchors,(1,1))
-        self.sigmoid2 = nn.Sigmoid()
 
         self.clf = nn.Conv2d(384, nb_anchors*nb_classes, (1,1))
 
@@ -220,9 +211,8 @@ class detection_head(nn.Module):
     def forward(self, x):
         x = x.permute(0, 3, 1, 2)
 
-        # occupancy
-        occ = self.occ(x)
-        occ = self.sigmoid1(occ).permute(0, 2, 3, 1) # bacth_size * 252 * 252 * 4
+        # occupancy logits
+        occ = self.occ(x).permute(0, 2, 3, 1)  # bacth_size * 252 * 252 * 4
 
         # location
         loc = self.loc(x)
@@ -236,9 +226,8 @@ class detection_head(nn.Module):
         size = self.sizeconv(x)
         size = size.permute(0, 2, 3, 1).reshape(batch_size, 252, 252, 4, 3)# bacth_size * 252 * 252 * 4 * 3
 
-        # heading
-        heading = self.heading(x)
-        heading = self.sigmoid2(heading).permute(0, 2, 3, 1)# bacth_size * 252 * 252 * 4
+        # heading logits
+        heading = self.heading(x).permute(0, 2, 3, 1)  # bacth_size * 252 * 252 * 4
 
         # clf
         clf = self.clf(x)

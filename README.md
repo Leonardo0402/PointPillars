@@ -51,8 +51,12 @@ kitti -|
 # 🌟Awesome Links
 [Kitti介绍（来自medium）](https://medium.com/test-ttile/kitti-3d-object-detection-dataset-d78a762b5a4)
 
-# 目前的困惑
-1. calibration file在哪里？为什么要做一个变换？
-2. ground truth是怎么做出来的？如何理解cpp文件的内容？
-3. heading 和 angle 的区别？
-4. 把focal loss中的BCE换掉了才跑得起来。哪里出错了？
+# 常见问题解答
+1. **calibration file在哪里？为什么要做一个变换？**  
+   标定文件位于 KITTI 数据集的 `training/calib` 与 `testing/calib` 目录，提供从 LiDAR 到相机坐标系的变换矩阵。标签数据在相机坐标系下给出，因此需要利用该矩阵将点云转换到同一坐标系以进行训练和评估。
+2. **ground truth是怎么做出来的？如何理解cpp文件的内容？**  
+   Ground truth 来自 `label_2` 文件中的 3D 边界框参数，训练时根据这些标注生成锚框目标。仓库中的 `point_pillars.cpp` 和 `make_pillars.cpp` 使用 C++/pybind11 加速点云划分成柱状体（pillar）的过程，是数据预处理的实现。
+3. **heading 和 angle 的区别？**  
+   `angle` 是相对于锚框的连续偏航角回归量，而 `heading` 是二值分类，区分物体朝向前或后，用于解决 180° 方向模糊的问题。
+4. **把focal loss中的BCE换掉了才跑得起来，哪里出错了？**  
+   原实现先对输出做 Sigmoid 再使用 `BCELoss`，容易出现数值不稳定。改用 `BCEWithLogitsLoss` 直接接受 logits，无需手动 Sigmoid，使得 Focal Loss 计算更稳健。
