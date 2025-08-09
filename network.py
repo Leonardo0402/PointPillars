@@ -93,43 +93,60 @@ class backbone(nn.Module):
 
         # top-down
 
-        self.block1 = [] # (S, 4, C)
-        self.bn1 = []
-        self.relu1 = []
+        # NOTE: use ModuleList instead of regular Python list so that submodules
+        # are properly registered and moved across devices.
+        # (S, 4, C)
+        self.block1 = nn.ModuleList()
+        self.bn1 = nn.ModuleList()
+        self.relu1 = nn.ModuleList()
         for i in range(4):
-            if i==0:
-                stride = (2,2)
-                self.block1.append(nn.Conv2d(64, 64, kernel_size=(3,3), stride=stride,padding=(3,3)))
+            if i == 0:
+                stride = (2, 2)
+                self.block1.append(
+                    nn.Conv2d(64, 64, kernel_size=(3, 3), stride=stride, padding=(3, 3))
+                )
             else:
-                stride = (1,1)
-                self.block1.append(nn.Conv2d(64, 64, kernel_size=(3,3), stride=stride,padding=(1,1)))
+                stride = (1, 1)
+                self.block1.append(
+                    nn.Conv2d(64, 64, kernel_size=(3, 3), stride=stride, padding=(1, 1))
+                )
             self.bn1.append(nn.BatchNorm2d(64))
             self.relu1.append(nn.ReLU())
 
-        self.block2 = [] # (2S, 6, 2C)
-        self.bn2 = []
-        self.relu2 = []
+        # (2S, 6, 2C)
+        self.block2 = nn.ModuleList()
+        self.bn2 = nn.ModuleList()
+        self.relu2 = nn.ModuleList()
         for i in range(6):
-            if i==0:
-                stride = (2,2) 
-                self.block2.append(nn.Conv2d(64, 64*2, kernel_size=(3,3),stride=stride,padding=(3,3)))
+            if i == 0:
+                stride = (2, 2)
+                self.block2.append(
+                    nn.Conv2d(64, 64 * 2, kernel_size=(3, 3), stride=stride, padding=(3, 3))
+                )
             else:
-                stride = (1,1)
-                self.block2.append(nn.Conv2d(64*2, 64*2, (3,3),stride,padding=(1,1)))
-            self.bn2.append(nn.BatchNorm2d(64*2))
+                stride = (1, 1)
+                self.block2.append(
+                    nn.Conv2d(64 * 2, 64 * 2, (3, 3), stride, padding=(1, 1))
+                )
+            self.bn2.append(nn.BatchNorm2d(64 * 2))
             self.relu2.append(nn.ReLU())
-        
-        self.block3 = [] # (4S, 6, 4C)
-        self.bn3 = []
-        self.relu3 = []
+
+        # (4S, 6, 4C)
+        self.block3 = nn.ModuleList()
+        self.bn3 = nn.ModuleList()
+        self.relu3 = nn.ModuleList()
         for i in range(6):
-            if i==0:
-                stride = (2,2) 
-                self.block3.append(nn.Conv2d(64, 64*4, kernel_size=(3,3),stride=stride,padding=(3,3)))
+            if i == 0:
+                stride = (2, 2)
+                self.block3.append(
+                    nn.Conv2d(64, 64 * 4, kernel_size=(3, 3), stride=stride, padding=(3, 3))
+                )
             else:
-                stride = (1,1)
-                self.block3.append(nn.Conv2d(64*4, 64*4, (3,3), stride,padding=(1,1)))
-            self.bn3.append(nn.BatchNorm2d(64*4))
+                stride = (1, 1)
+                self.block3.append(
+                    nn.Conv2d(64 * 4, 64 * 4, (3, 3), stride, padding=(1, 1))
+                )
+            self.bn3.append(nn.BatchNorm2d(64 * 4))
             self.relu3.append(nn.ReLU())
         
         # upsampling
@@ -145,6 +162,8 @@ class backbone(nn.Module):
         self.up3 = nn.Conv2d(4*64, 2*64, (3,3), (1,1)) # (4S, S, 2C)
         self.bn_up3 = nn.BatchNorm2d(2*64)
         self.relu_up3 = nn.ReLU()
+
+        # TODO: 目前各阶段均从原始输入 x0 开始，可研究串联使用上一阶段输出以提升特征表达
         
     def forward(self, x):
         x = x.permute(0,3,1,2)
@@ -273,9 +292,10 @@ class point_pillars_net(nn.Module):
 
         x = self.pillar_feature_net(pillar_points, pillar_indices)
         x = self.backbone(x)
-        occ, loc, angle, size, heading, clf= self.detection_head(x)
+        occ, loc, angle, size, heading, clf = self.detection_head(x)
 
-        return occ, loc, size, angle, heading, clf
+        # 保持输出顺序与 detection_head.forward 一致，避免后续使用时出现混淆
+        return occ, loc, angle, size, heading, clf
 
 
         
