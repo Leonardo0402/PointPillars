@@ -1,58 +1,45 @@
-# Point Pillars Implementation
+# PointPillars 简介
 
-- [x] config.py
-- [x] network.py
-- [x] reader.py
-- [x] processor.py
-- [x] lossfunction.py
-- [x] train.py
-- [ ] inference.py
+本项目是一个基于 PyTorch 的 [PointPillars](https://arxiv.org/abs/1812.05784) 实验性实现，用于在 KITTI 点云数据集上进行 3D 目标检测。代码主要面向初学者，结构清晰，便于理解。
 
-# kitti dataset
-## label.txt 说明
-0. 类别
-1. 截断程度
-2. 遮挡率
-3. 观察角度
-45. 2D bounding box左上角坐标
-67. 2D bounding box右下角坐标
-8910. 3D bounding box 的length，width， height
-111213. 3D boudning box 在相机的坐标
-14. 相对y轴的旋转角度
-## calibration.txt 说明
-Tr_velo_to_cam maps a point in point cloud coordinate to reference co-ordinate.
-## 文件夹结构(/home/neil/disk/kitti)
+## 主要模块
+- **config.py**：集中定义网格范围、锚框尺寸等参数。
+- **reader.py**：读取 KITTI 的点云与标签文件。
+- **processor.py**：将原始点云划分为 Pillars，并生成训练所需的真值。
+- **network.py**：包含 Pillar Feature Net、2D 卷积 Backbone 与检测头。
+- **lossfunction.py**：实现焦点损失等训练损失。
+- **train.py**：示例训练脚本。
+- **inference.py**：推理脚本（仍在完善中）。
+
+## 环境准备
+1. 安装依赖
+   ```bash
+   pip install torch numpy tensorflow scikit-learn pybind11
+   ```
+2. 编译 C++ 扩展
+   ```bash
+   c++ -O3 -Wall -shared -std=c++11 -fPIC $(python3 -m pybind11 --includes) point_pillars.cpp \
+      -o point_pillars$(python3-config --extension-suffix)
+   ```
+
+## 数据准备
+将 KITTI 数据集下载并解压到 `config.py` 中 `Parameters.kitti_path` 指定的位置（默认 `/home/neil/disk/kitti`），目录结构示例如下：
 ```
-       |--- testing -- velodyne(000000.bin~007517.bin)
-kitti -|
-       |--- traning -- label_2(000000.txt~007480.txt)
-                  -- velodyne(000000.bin~007480.bin)
-```
-# make pillars算法
-```
-输入：包含n个4维点的点云
-输出：包含n个9维点的点云
-1. 创建一个pillars的字典，key为center，value为所包含的点的list，初始化为空.
-2. 对于点云中的点，进行遍历。
-（1）判断点是否在范围内。如果是，=>（2），否则跳过进入下一个点。
-（2）判断点在哪个pillar内，加入对应pillar的list。
-3. 对于已经创建好的pillars的字典内容进行遍历。
-（1）如果该list的点含量大于100，随机采样其中的100个点，保留下来。如果该list的点含量小于100，用0填充至100。如果该list的点含量等于100，进入（2）。
-（2）对于已经处理好的包含100个点的list进行遍历，将每个点由4维扩展为9维。
-（3）将一个list转化为一个numpy矩阵。
-4. 将字典中的所有numpy矩阵转化为一个numpy矩阵，输出。
-    
+kitti
+├── training
+│   ├── velodyne    # 点云文件 (.bin)
+│   └── label_2     # 标注文件 (.txt)
+└── testing
+    └── velodyne
 ```
 
-# pybind编译指令
-> c++ -O3 -Wall -shared -std=c++11 -fPIC $(python3 -m pybind11 --includes) point_pillars.cpp -o point_pillars$(python3-config --extension-suffix)
+## 运行示例
+```bash
+python train.py       # 开始训练
+# 目前 inference.py 仍在开发中，可参考 train.py 中的模型调用方式
+```
 
+## 参考
+- [KITTI 3D Object Detection 数据集简介](https://medium.com/test-ttile/kitti-3d-object-detection-dataset-d78a762b5a4)
+- 原始论文：Alex H. Lang et al., *PointPillars: Fast Encoders for Object Detection from Point Clouds*, CVPR 2019.
 
-# 🌟Awesome Links
-[Kitti介绍（来自medium）](https://medium.com/test-ttile/kitti-3d-object-detection-dataset-d78a762b5a4)
-
-# 目前的困惑
-1. calibration file在哪里？为什么要做一个变换？
-2. ground truth是怎么做出来的？如何理解cpp文件的内容？
-3. heading 和 angle 的区别？
-4. 把focal loss中的BCE换掉了才跑得起来。哪里出错了？
